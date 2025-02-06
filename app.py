@@ -40,7 +40,7 @@ def obter_beta_volatilidade_dividend_yield(ticker, benchmark='^BVSP'):
     preco_atual = ativo.history(period="1d")['Close'].iloc[0]
     dividend_yield = dividendos / preco_atual if preco_atual else None
 
-    return beta, volatilidade, dividend_yield
+    return beta, volatilidade, dividend_yield, dividendos
 
 # Função principal da aplicação
 def app():
@@ -61,24 +61,33 @@ def app():
         col1, col2, col3 = st.columns(3)
         
         # Exibindo resultados nas colunas
-        col1.metric(label=f"Preço Atual para {ticker}", value=f"R${preco_atual:.2f}")
-        col2.metric(label=f"Média dos últimos 5 anos para {ticker}", value=f"R${media:.2f}")
-        col3.metric(label=f"Mediana dos últimos 5 anos para {ticker}", value=f"R${mediana:.2f}")
+        col1.metric(label=f"Preço Atual para {ticker}", value=f"R$ {preco_atual:.2f}")
+        col2.metric(label=f"Média dos últimos 5 anos para {ticker}", value=f"R$ {media:.2f}")
+        col3.metric(label=f"Mediana dos últimos 5 anos para {ticker}", value=f"R$ {mediana:.2f}")
 
-        # Obtendo Beta, Volatilidade e Dividend Yield
-        beta, volatilidade, dividend_yield = obter_beta_volatilidade_dividend_yield(ticker)
+        # Obtendo Beta, Volatilidade, Dividend Yield e Dividendos
+        beta, volatilidade, dividend_yield, dividendos = obter_beta_volatilidade_dividend_yield(ticker)
+
+        # Calculando o Preço Teto Barsi
+        preco_teto_barsi = dividendos / 0.06
 
         # Dividindo a interface em três colunas para Beta, Volatilidade e Dividend Yield
         col1, col2, col3 = st.columns(3)
         
         # Exibindo resultados nas colunas
-        col1.metric(label=f"Beta (1 ano)", value=f"{beta:.2f}")
-        col2.metric(label=f"Volatilidade (1 ano)", value=f"{volatilidade:.2%}")
+        col1.metric(label=f"Beta (1 ano)", value=f" {beta:.2f}")
+        col2.metric(label=f"Volatilidade (1 ano)", value=f" {volatilidade:.2%}")
         if dividend_yield is not None:
-            col3.metric(label=f"Dividend Yield (1 ano)", value=f"{dividend_yield:.2%}")
+            col3.metric(label=f"Dividend Yield (1 ano)", value=f" {dividend_yield:.2%}")
         else:
             col3.metric(label=f"Dividend Yield (1 ano)", value="Dados não disponíveis")
 
+        # Dividindo a interface em duas colunas para Soma dos Dividendos e Preço Teto Barsi
+        col4, col5 = st.columns(2)
+        
+        # Exibindo resultados nas colunas
+        col4.metric(label=f"Soma dos Dividendos (12 meses)", value=f"R$ {dividendos:.2f}")
+        col5.metric(label=f"Preço Teto Barsi", value=f"R$ {preco_teto_barsi:.2f}")
+
 if __name__ == "__main__":
     app()
-
