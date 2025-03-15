@@ -1,45 +1,29 @@
 import streamlit as st
 import yfinance as yf
-import pandas as pd
 import numpy as np
 
 # Função para calcular a média e a mediana dos preços de fechamento dos últimos 5 anos
 def calcular_media_mediana(ticker):
-    # Obtendo dados históricos dos últimos 5 anos
     ativo = yf.Ticker(ticker)
     historico = ativo.history(period="5y")['Close']
-    
-    # Calculando média e mediana
     media = historico.mean()
     mediana = historico.median()
-    
     return media, mediana
 
 # Função para calcular o Beta, a volatilidade e o dividend yield
 def obter_beta_volatilidade_dividend_yield(ticker, benchmark='^BVSP'):
     ativo = yf.Ticker(ticker)
     benchmark_ativo = yf.Ticker(benchmark)
-
-    # Obtendo dados históricos de 1 ano
     historico_ativo = ativo.history(period="1y")['Close']
     historico_benchmark = benchmark_ativo.history(period="1y")['Close']
-
-    # Calculando os retornos diários
     retornos_ativo = historico_ativo.pct_change().dropna()
     retornos_benchmark = historico_benchmark.pct_change().dropna()
-
-    # Calculando o Beta
     cov_matrix = np.cov(retornos_ativo, retornos_benchmark)
     beta = cov_matrix[0, 1] / cov_matrix[1, 1]
-
-    # Calculando a volatilidade
-    volatilidade = retornos_ativo.std() * np.sqrt(252)  # Anualizando a volatilidade
-
-    # Calculando o dividend yield como a soma dos dividendos nos últimos 12 meses dividido pelo preço atual
+    volatilidade = retornos_ativo.std() * np.sqrt(252)
     dividendos = ativo.dividends[-252:].sum()
     preco_atual = ativo.history(period="1d")['Close'].iloc[0]
     dividend_yield = dividendos / preco_atual if preco_atual else None
-
     return beta, volatilidade, dividend_yield, dividendos
 
 # Função principal da aplicação
@@ -50,44 +34,45 @@ def app():
     ticker = st.text_input('Digite o ticker da ação (ex: PETR4.SA):')
 
     if ticker:
-        # Exibindo a cotação atual
         ativo = yf.Ticker(ticker)
         preco_atual = ativo.history(period="1d")['Close'].iloc[0]
-        
-        # Calculando a média e mediana dos preços dos últimos 5 anos
         media, mediana = calcular_media_mediana(ticker)
 
-        # Dividindo a interface em três colunas
+        # Indicadores Históricos
+        st.markdown("### Indicadores")
         col1, col2, col3 = st.columns(3)
-        
-        # Exibindo resultados nas colunas
-        col1.metric(label=f"Preço Atual para {ticker}", value=f"R$ {preco_atual:.2f}")
-        col2.metric(label=f"Média dos últimos 5 anos para {ticker}", value=f"R$ {media:.2f}")
-        col3.metric(label=f"Mediana dos últimos 5 anos para {ticker}", value=f"R$ {mediana:.2f}")
+        col1.metric(label="Preço Atual", value=f"R$ {preco_atual:.2f}")
+        col2.metric(label="Média (5 anos)", value=f"R$ {media:.2f}")
+        col3.metric(label="Mediana (5 anos)", value=f"R$ {mediana:.2f}")
 
-        # Obtendo Beta, Volatilidade, Dividend Yield e Dividendos
         beta, volatilidade, dividend_yield, dividendos = obter_beta_volatilidade_dividend_yield(ticker)
-
-        # Calculando o Preço Teto Barsi
-        preco_teto_barsi = dividendos / 0.06
-
-        # Dividindo a interface em três colunas para Beta, Volatilidade e Dividend Yield
         col1, col2, col3 = st.columns(3)
-        
-        # Exibindo resultados nas colunas
-        col1.metric(label=f"Beta (1 ano)", value=f" {beta:.2f}")
-        col2.metric(label=f"Volatilidade (1 ano)", value=f" {volatilidade:.2%}")
-        if dividend_yield is not None:
-            col3.metric(label=f"Dividend Yield (1 ano)", value=f" {dividend_yield:.2%}")
-        else:
-            col3.metric(label=f"Dividend Yield (1 ano)", value="Dados não disponíveis")
+        col1.metric(label="Beta (1 ano)", value=f"{beta:.2f}")
+        col2.metric(label="Volatilidade (1 ano)", value=f"{volatilidade:.2%}")
+        col3.metric(label="Dividend Yield (1 ano)", value=f"{dividend_yield:.2%}" if dividend_yield else "N/A")
 
-        # Dividindo a interface em duas colunas para Soma dos Dividendos e Preço Teto Barsi
         col4, col5 = st.columns(2)
+        col4.metric(label="Soma dos Dividendos (12 meses)", value=f"R$ {dividendos:.2f}")
+        col5.metric(label="Preço Teto Barsi", value=f"R$ {dividendos / 0.06:.2f}" if dividendos else "N/A")
         
-        # Exibindo resultados nas colunas
-        col4.metric(label=f"Soma dos Dividendos (12 meses)", value=f"R$ {dividendos:.2f}")
-        col5.metric(label=f"Preço Teto Barsi", value=f"R$ {preco_teto_barsi:.2f}")
+        
+        # Entrada do LPA e VPA
+        col1, col2 = st.columns(2)
+        with col1:
+            lpa = st.number_input("Informe o LPA (Lucro por Ação):", value=0.0, step=0.01)
+        with col2:
+            vpa = st.number_input("Informe o VPA (Valor Patrimonial por Ação):", value=0.0, step=0.01)
+        
+        if lpa > 0 and vpa > 0:
+            preco_justo = np.sqrt(lpa * vpa * 22.5)
+        else:
+            preco_justo = None
+            
+        # Exibição do Preço Justo Gahan
+        if preco_justo:
+            st.markdown("### Preço Justo (Graham)")
+            st.metric(label="Preço Justo Gahan", value=f"R$ {preco_justo:.2f}")
+
 
 if __name__ == "__main__":
     app()
