@@ -3,10 +3,10 @@ import yfinance as yf
 import numpy as np
 import pandas as pd
 
-# Função para calcular a média e a mediana dos preços de fechamento dos últimos 5 anos
-def calcular_media_mediana(ticker):
+# Função para calcular a média e a mediana dos preços de fechamento
+def calcular_media_mediana(ticker, periodo="5y"):
     ativo = yf.Ticker(ticker)
-    historico = ativo.history(period="5y")['Close']
+    historico = ativo.history(period=periodo)['Close']
     media = historico.mean()
     mediana = historico.median()
     return media, mediana
@@ -89,6 +89,30 @@ def obter_lpa_vpa(ticker):
             lpa = None
     return lpa, vpa
 
+# Função para calcular preço justo usando adaptação de Graham para o Brasil
+def calcular_preco_justo_graham_brasil(lpa, vpa):
+    """
+    Calcula o preço justo usando a fórmula de Benjamin Graham adaptada para a realidade brasileira.
+    
+    Fórmula: Valor intrínseco = √(10 × VPA × LPA)
+    
+    Argumento para adaptação:
+    - Nos EUA (época de Graham): P/L máx. de 15 × P/VP máx. de 1,5 = 22,5
+    - No Brasil (juros altos, inflação, risco maior): P/L máx. de 8 × P/VP máx. de 1,25 = 10
+    
+    Margem de segurança recomendada: 20% de desconto sobre o valor calculado
+    """
+    if not lpa or not vpa or lpa <= 0 or vpa <= 0:
+        return None, None
+    
+    # Fórmula adaptada para Brasil: √(10 × VPA × LPA)
+    valor_intrinseco = np.sqrt(10 * vpa * lpa)
+    
+    # Aplicando margem de segurança de 20%
+    valor_com_margem = valor_intrinseco * 0.80
+    
+    return valor_intrinseco, valor_com_margem
+
 # Função principal da aplicação
 def app():
     st.set_page_config(page_title='Ativo - Preço Justo', layout='wide')
@@ -114,26 +138,28 @@ def app():
         preco_atual = float(df_close.iloc[-1]) if not df_close.empty else None
     except Exception:
         preco_atual = None
-    media, mediana = calcular_media_mediana(ticker)
+    media_5y, mediana_5y = calcular_media_mediana(ticker, "5y")
+    media_10y, mediana_10y = calcular_media_mediana(ticker, "10y")
 
-    st.markdown('### Visão Geral')
-    col1, col2, col3 = st.columns([1.5, 1, 1])
+    # LINHA 01: PREÇO ATUAL / MEDIA 5 ANOS / MÉDIA 10 ANOS / MEDIANA 5 ANOS / MEDIANA 10 ANOS
+    col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric('Preço Atual', f"R$ {preco_atual:.2f}" if preco_atual else 'N/A')
-    col2.metric('Média (5 anos)', f"R$ {media:.2f}")
-    col3.metric('Mediana (5 anos)', f"R$ {mediana:.2f}")
+    col2.metric('Média (5 anos)', f"R$ {media_5y:.2f}")
+    col3.metric('Média (10 anos)', f"R$ {media_10y:.2f}")
+    col4.metric('Mediana (5 anos)', f"R$ {mediana_5y:.2f}")
+    col5.metric('Mediana (10 anos)', f"R$ {mediana_10y:.2f}")
 
+    # LINHA 02: BETA / VOLATILIDADE / DIVIDEND YIELD / SOMA DE DIVIDENDOS
     beta, volatilidade, dividend_yield, dividendos = obter_beta_volatilidade_dividend_yield(ticker)
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     col1.metric('Beta (1 ano)', f"{beta:.2f}" if beta is not None else 'N/A')
     col2.metric('Volatilidade (1 ano)', f"{volatilidade:.2%}" if volatilidade is not None else 'N/A')
     col3.metric('Dividend Yield (12m)', f"{dividend_yield:.2%}" if dividend_yield else 'N/A')
-
-    col4, col5 = st.columns(2)
     col4.metric('Soma Dividendos (12m)', f"R$ {dividendos:.2f}")
-    col5.metric('Preço Teto (Barsi ~ 6%)', f"R$ {dividendos / 0.06:.2f}" if dividendos else 'N/A')
 
     lpa_auto, vpa_auto = obter_lpa_vpa(ticker)
-    st.markdown('### LPA / VPA')
+    st.markdown('---')
+    st.markdown('### Inputs LPA / VPA')
     c1, c2, c3 = st.columns([1, 1, 2])
     with c1:
         if usar_auto and lpa_auto:
@@ -147,23 +173,23 @@ def app():
             vpa = st.number_input('VPA (Informe se não houver automático)', value=float(vpa_auto) if vpa_auto else 0.0, format='%.4f')
     with c3:
         st.write('Fonte: yfinance (quando disponível). Você pode ajustar manualmente os valores acima.')
+    
+    st.markdown('---')
 
-    preco_justo = None
+    # Calcular preço justo (Graham original)
+    preco_justo_graham = None
     if lpa and vpa and lpa > 0 and vpa > 0:
-        preco_justo = np.sqrt(lpa * vpa * 22.5)
-
-    st.markdown('### Preço Justo (Graham)')
-    if preco_justo:
-        st.metric('Preço Justo (Graham)', f"R$ {preco_justo:.2f}")
-        if preco_atual:
-            pct = (preco_atual - preco_justo) / preco_justo
-            st.metric('Diferença vs preço atual', f"{pct:.2%}")
-    else:
-        st.info('LPA ou VPA inválidos para cálculo do preço justo.')
-
-    st.markdown('### Valuation')
+        preco_justo_graham = np.sqrt(lpa * vpa * 22.5)
+    
+    # Calcular preço justo (Graham adaptado para Brasil)
+    valor_intrinseco_brasil = None
+    valor_com_margem_brasil = None
+    if lpa and vpa and lpa > 0 and vpa > 0:
+        valor_intrinseco_brasil, valor_com_margem_brasil = calcular_preco_justo_graham_brasil(lpa, vpa)
+    
+    # Calcular P/L e P/VPA
     pl = None
-    pv = None
+    pvpa = None
     try:
         if lpa and lpa != 0 and preco_atual:
             pl = preco_atual / lpa
@@ -171,12 +197,87 @@ def app():
         pl = None
     try:
         if vpa and vpa != 0 and preco_atual:
-            pv = preco_atual / vpa
+            pvpa = preco_atual / vpa
     except Exception:
-        pv = None
-    ip1, ip2 = st.columns(2)
-    ip1.metric('P/L', f"{pl:.2f}" if pl else 'N/A')
-    ip2.metric('P/VPA', f"{pv:.2f}" if pv else 'N/A')
+        pvpa = None
+    
+    # Calcular Preço Teto (Barsi ~ 6%)
+    preco_barsi = None
+    if dividendos and dividendos > 0:
+        preco_barsi = dividendos / 0.06
+    
+    # LINHA 03: LPA / VPA / PL / PVPA
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric('LPA', f"R$ {lpa:.4f}" if lpa else 'N/A')
+    col2.metric('VPA', f"R$ {vpa:.4f}" if vpa else 'N/A')
+    col3.metric('P/L', f"{pl:.2f}" if pl else 'N/A')
+    col4.metric('P/VPA', f"{pvpa:.2f}" if pvpa else 'N/A')
+    
+    st.markdown('---')
+    
+    # LINHA 04: PREÇO JUSTO BARSI / PREÇO JUSTO GRAHAM / PREÇO JUSTO BRASIL / PREÇO JUSTO BRASIL COM 20%
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        col1.metric('Preço Justo (Barsi 6%)', f"R$ {preco_barsi:.2f}" if preco_barsi else 'N/A')
+    with col2:
+        col2.metric('Preço Justo (Graham)', f"R$ {preco_justo_graham:.2f}" if preco_justo_graham else 'N/A')
+    with col3:
+        if valor_intrinseco_brasil:
+            col3.metric('Preço Justo (Brasil)', f"R$ {valor_intrinseco_brasil:.2f}")
+        else:
+            col3.metric('Preço Justo (Brasil)', 'N/A')
+    with col4:
+        if valor_com_margem_brasil:
+            col4.metric('Preço Justo (Brasil - 20%)', f"R$ {valor_com_margem_brasil:.2f}")
+        else:
+            col4.metric('Preço Justo (Brasil - 20%)', 'N/A')
+    
+    # LINHA 05: UPSIDE PREÇO JUSTO BARSI / UPSIDE PREÇO JUSTO GRAHAM / UPSIDE BRASIL / UPSIDE BRASIL COM 20%
+    # Upside mostra o potencial de alta/baixa: (Preço Justo - Preço Atual) / Preço Justo
+    upside_barsi = None
+    upside_graham = None
+    upside_brasil = None
+    upside_brasil_20 = None
+    if preco_barsi and preco_atual:
+        upside_barsi = (preco_barsi - preco_atual) / preco_barsi
+    if preco_justo_graham and preco_atual:
+        upside_graham = (preco_justo_graham - preco_atual) / preco_justo_graham
+    if valor_intrinseco_brasil and preco_atual:
+        upside_brasil = (valor_intrinseco_brasil - preco_atual) / valor_intrinseco_brasil
+    if valor_com_margem_brasil and preco_atual:
+        upside_brasil_20 = (valor_com_margem_brasil - preco_atual) / valor_com_margem_brasil
+    
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        col1.metric('Upside Barsi 6%', f"{upside_barsi:.2%}" if upside_barsi is not None else 'N/A')
+    with col2:
+        col2.metric('Upside Graham', f"{upside_graham:.2%}" if upside_graham is not None else 'N/A')
+    with col3:
+        col3.metric('Upside Brasil (s/ 20%)', f"{upside_brasil:.2%}" if upside_brasil is not None else 'N/A')
+    with col4:
+        col4.metric('Upside Brasil (c/ 20%)', f"{upside_brasil_20:.2%}" if upside_brasil_20 is not None else 'N/A')
+    
+    st.markdown('---')
+    
+    # Informações adicionais sobre a fórmula de Graham Brasil
+    with st.expander('ℹ️ Explicação da Fórmula de Graham (Adaptação Brasil)'):
+        st.markdown("""
+        **Fórmula adaptada para o Brasil:**
+        
+        Valor Intrínseco = √(10 × VPA × LPA)
+        Preço Sugerido = Valor Intrínseco × 0,80 (margem de segurança 20%)
+        
+        **Rationale da adaptação:**
+        - **Nos EUA (Graham original):** P/L máximo de 15 × P/VP máximo de 1,5 = 22,5
+        - **No Brasil (realidade local):** P/L máximo de 8 × P/VP máximo de 1,25 = 10
+          - P/L de 8: recuperação do capital em até 8 anos
+          - P/VP de 1,25: mais conservador dado juros altos, inflação e risco maior
+        
+        **Margem de Segurança:** 20% de desconto sobre o valor intrínseco
+        - Recomenda-se comprar apenas com essa margem de segurança
+        
+        **Limitações:** Não é recomendado para setores como tecnologia, bancos e seguros
+        """)
 
     st.markdown('### Gráfico de Preço')
     if not df_close.empty:
