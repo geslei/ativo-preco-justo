@@ -179,47 +179,69 @@ def app():
     # CSS customizado para melhorar o layout
     st.markdown("""
     <style>
+        body {
+            font-size: 13px;
+        }
+        h1, h2, h3, h4, h5, h6 {
+            font-size: 14px !important;
+            margin-top: 10px !important;
+            margin-bottom: 8px !important;
+        }
         .section-header {
             background: linear-gradient(90deg, #1f77b4 0%, #2ca02c 100%);
             color: white;
-            padding: 12px 20px;
+            padding: 8px 12px;
             border-radius: 8px;
-            margin-top: 20px;
-            margin-bottom: 15px;
-            font-size: 18px;
+            margin-top: 12px;
+            margin-bottom: 10px;
+            font-size: 14px;
             font-weight: bold;
         }
         .metric-card {
             background: #f0f2f6;
-            padding: 15px;
+            padding: 10px;
             border-radius: 8px;
             border-left: 4px solid #1f77b4;
         }
         .alert-box {
             background: #fff3cd;
             border: 1px solid #ffc107;
-            padding: 15px;
+            padding: 10px;
             border-radius: 6px;
-            margin: 10px 0;
+            margin: 6px 0;
+            font-size: 12px;
         }
         .success-box {
             background: #d4edda;
             border: 1px solid #28a745;
-            padding: 15px;
+            padding: 10px;
             border-radius: 6px;
-            margin: 10px 0;
+            margin: 6px 0;
+            font-size: 12px;
         }
         .danger-box {
             background: #f8d7da;
             border: 1px solid #f5c6cb;
-            padding: 15px;
+            padding: 10px;
             border-radius: 6px;
-            margin: 10px 0;
+            margin: 6px 0;
+            font-size: 12px;
+        }
+        ul, ol {
+            margin: 4px 0;
+            padding-left: 20px;
+        }
+        li {
+            margin: 2px 0;
+            font-size: 12px;
+        }
+        table {
+            font-size: 12px;
         }
     </style>
     """, unsafe_allow_html=True)
     
-    st.title('📈 Analisador de Ações — Indicadores e Preço Justo')
+    st.markdown('<h2 style="margin-top: 0; margin-bottom: 15px;">📈 Analisador de Ações — Indicadores e Preço Justo</h2>', unsafe_allow_html=True)
 
     st.sidebar.header('⚙️ Configurações')
     ticker = st.sidebar.text_input('Ticker (ex: PETR4.SA)', value='', placeholder='Digite o ticker')
@@ -287,7 +309,7 @@ def app():
         else:
             vpa = st.number_input('VPA (Valor Patrimonial)', value=float(vpa_auto) if vpa_auto else 0.0, format='%.4f')
     with c3:
-        st.markdown('<p style="color: #666; font-size: 13px; margin-top: 32px;">Fonte: yfinance (quando disponível). Ajuste manualmente se necessário.</p>', 
+        st.markdown('<p style="color: #666; font-size: 11px; margin-top: 20px;">Fonte: yfinance (quando disponível). Ajuste manualmente se necessário.</p>', 
                    unsafe_allow_html=True)
 
     # Calcular preço justo (Graham original)
