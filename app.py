@@ -47,6 +47,65 @@ def obter_beta_volatilidade_dividend_yield(ticker, benchmark='^BVSP'):
     return beta, volatilidade, dividend_yield, dividendos
 
 
+# Função para calcular o PEG Ratio
+def calcular_peg_ratio(ticker, pl):
+    """
+    Calcula o PEG Ratio = P/L / Taxa de Crescimento de Lucros (%)
+    
+    Busca o crescimento histórico do LPA nos últimos 5 anos.
+    Se não conseguir dados, usa uma taxa padrão de 12% (expectativa para Brasil).
+    """
+    if not pl or pl <= 0:
+        return None
+    
+    try:
+        tk = yf.Ticker(ticker)
+        info = tk.info
+        
+        # Tentar obter a taxa de crescimento esperado (forward estimate)
+        growth_rate = None
+        
+        # Primeiro, tenta obter do yfinance (earningsGrowth)
+        if 'earningsGrowth' in info and info['earningsGrowth'] is not None:
+            growth_rate = float(info['earningsGrowth']) * 100
+        
+        # Se não conseguir, tenta calcular a partir dos históricos de ganhos
+        if growth_rate is None or growth_rate == 0:
+            try:
+                # Obtém os earnings históricos
+                financials = tk.quarterly_financials
+                if 'Net Income' in financials.index:
+                    earnings = financials.loc['Net Income']
+                elif not financials.empty:
+                    earnings = financials.iloc[0]
+                else:
+                    earnings = None
+                
+                if earnings is not None and len(earnings) >= 2:
+                    # Calcula a taxa média de crescimento dos últimos trimestres
+                    earnings_clean = earnings.dropna()[earnings.dropna() != 0]
+                    if len(earnings_clean) >= 2:
+                        # CAGR simplificado
+                        oldest = earnings_clean.iloc[-1]
+                        newest = earnings_clean.iloc[0]
+                        if oldest > 0:
+                            periods = len(earnings_clean) - 1
+                            growth_rate = ((newest / oldest) ** (1/periods) - 1) * 100
+            except Exception:
+                growth_rate = None
+        
+        # Se ainda não tiver growth_rate, usa taxa padrão para Brasil
+        if growth_rate is None or growth_rate <= 0:
+            growth_rate = 12.0  # Taxa padrão de crescimento esperado no Brasil (12%)
+        
+        # PEG Ratio = P/L / Taxa de Crescimento (%)
+        peg_ratio = pl / growth_rate if growth_rate > 0 else None
+        
+        return peg_ratio, growth_rate
+    
+    except Exception:
+        return None, None
+
 def obter_lpa_vpa(ticker):
     tk = yf.Ticker(ticker)
     lpa = None
@@ -116,15 +175,59 @@ def calcular_preco_justo_graham_brasil(lpa, vpa):
 # Função principal da aplicação
 def app():
     st.set_page_config(page_title='Ativo - Preço Justo', layout='wide')
-    st.title('Analisador de Ações — Indicadores e Preço Justo')
+    
+    # CSS customizado para melhorar o layout
+    st.markdown("""
+    <style>
+        .section-header {
+            background: linear-gradient(90deg, #1f77b4 0%, #2ca02c 100%);
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+            margin-bottom: 15px;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .metric-card {
+            background: #f0f2f6;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #1f77b4;
+        }
+        .alert-box {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 10px 0;
+        }
+        .success-box {
+            background: #d4edda;
+            border: 1px solid #28a745;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 10px 0;
+        }
+        .danger-box {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 10px 0;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    st.title('📈 Analisador de Ações — Indicadores e Preço Justo')
 
-    st.sidebar.header('Configurações')
-    ticker = st.sidebar.text_input('Ticker (ex: PETR4.SA)', value='')
+    st.sidebar.header('⚙️ Configurações')
+    ticker = st.sidebar.text_input('Ticker (ex: PETR4.SA)', value='', placeholder='Digite o ticker')
     periodo = st.sidebar.selectbox('Período do gráfico', options=['1mo', '3mo', '6mo', '1y', '5y'], index=3)
     usar_auto = st.sidebar.checkbox('Usar LPA/VPA automáticos (se disponíveis)', value=True)
 
     if not ticker:
-        st.info('Digite um ticker na barra lateral para iniciar a análise.')
+        st.info('👉 Digite um ticker na barra lateral para iniciar a análise.')
         return
 
     ativo = yf.Ticker(ticker)
@@ -141,40 +244,51 @@ def app():
     media_5y, mediana_5y = calcular_media_mediana(ticker, "5y")
     media_10y, mediana_10y = calcular_media_mediana(ticker, "10y")
 
-    # LINHA 01: PREÇO ATUAL / MEDIA 5 ANOS / MÉDIA 10 ANOS / MEDIANA 5 ANOS / MEDIANA 10 ANOS
+    # ============================================
+    # SEÇÃO 1: VISÃO GERAL DA AÇÃO
+    # ============================================
+    st.markdown('<div class="section-header">💰 VISÃO GERAL</div>', unsafe_allow_html=True)
+    
     col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric('Preço Atual', f"R$ {preco_atual:.2f}" if preco_atual else 'N/A')
-    col2.metric('Média (5 anos)', f"R$ {media_5y:.2f}")
-    col3.metric('Média (10 anos)', f"R$ {media_10y:.2f}")
-    col4.metric('Mediana (5 anos)', f"R$ {mediana_5y:.2f}")
-    col5.metric('Mediana (10 anos)', f"R$ {mediana_10y:.2f}")
+    col1.metric('🎯 Preço Atual', f"R$ {preco_atual:.2f}" if preco_atual else 'N/A')
+    col2.metric('📊 Média (5a)', f"R$ {media_5y:.2f}")
+    col3.metric('📊 Média (10a)', f"R$ {media_10y:.2f}")
+    col4.metric('📈 Mediana (5a)', f"R$ {mediana_5y:.2f}")
+    col5.metric('📈 Mediana (10a)', f"R$ {mediana_10y:.2f}")
 
-    # LINHA 02: BETA / VOLATILIDADE / DIVIDEND YIELD / SOMA DE DIVIDENDOS
+    # ============================================
+    # SEÇÃO 2: MÉTRICAS DE RISCO E RENDIMENTO
+    # ============================================
+    st.markdown('<div class="section-header">⚡ RISCO E RENDIMENTO</div>', unsafe_allow_html=True)
+    
     beta, volatilidade, dividend_yield, dividendos = obter_beta_volatilidade_dividend_yield(ticker)
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric('Beta (1 ano)', f"{beta:.2f}" if beta is not None else 'N/A')
-    col2.metric('Volatilidade (1 ano)', f"{volatilidade:.2%}" if volatilidade is not None else 'N/A')
-    col3.metric('Dividend Yield (12m)', f"{dividend_yield:.2%}" if dividend_yield else 'N/A')
-    col4.metric('Soma Dividendos (12m)', f"R$ {dividendos:.2f}")
+    col1.metric('📍 Beta (1a)', f"{beta:.2f}" if beta is not None else 'N/A', 
+                delta='Alto risco' if beta and beta > 1 else 'Baixo risco' if beta else None)
+    col2.metric('📊 Volatilidade', f"{volatilidade:.2%}" if volatilidade is not None else 'N/A')
+    col3.metric('💵 Dividend Yield', f"{dividend_yield:.2%}" if dividend_yield else 'N/A')
+    col4.metric('💸 Dividendos (12m)', f"R$ {dividendos:.2f}")
 
+    # ============================================
+    # SEÇÃO 3: DADOS DE ENTRADA (LPA/VPA)
+    # ============================================
+    st.markdown('<div class="section-header">📝 DADOS FUNDAMENTAIS</div>', unsafe_allow_html=True)
+    
     lpa_auto, vpa_auto = obter_lpa_vpa(ticker)
-    st.markdown('---')
-    st.markdown('### Inputs LPA / VPA')
     c1, c2, c3 = st.columns([1, 1, 2])
     with c1:
         if usar_auto and lpa_auto:
-            lpa = st.number_input('LPA (automático)', value=float(lpa_auto), format='%.4f')
+            lpa = st.number_input('LPA (Lucro por Ação)', value=float(lpa_auto), format='%.4f')
         else:
-            lpa = st.number_input('LPA (Informe se não houver automático)', value=float(lpa_auto) if lpa_auto else 0.0, format='%.4f')
+            lpa = st.number_input('LPA (Lucro por Ação)', value=float(lpa_auto) if lpa_auto else 0.0, format='%.4f')
     with c2:
         if usar_auto and vpa_auto:
-            vpa = st.number_input('VPA (automático)', value=float(vpa_auto), format='%.4f')
+            vpa = st.number_input('VPA (Valor Patrimonial)', value=float(vpa_auto), format='%.4f')
         else:
-            vpa = st.number_input('VPA (Informe se não houver automático)', value=float(vpa_auto) if vpa_auto else 0.0, format='%.4f')
+            vpa = st.number_input('VPA (Valor Patrimonial)', value=float(vpa_auto) if vpa_auto else 0.0, format='%.4f')
     with c3:
-        st.write('Fonte: yfinance (quando disponível). Você pode ajustar manualmente os valores acima.')
-    
-    st.markdown('---')
+        st.markdown('<p style="color: #666; font-size: 13px; margin-top: 32px;">Fonte: yfinance (quando disponível). Ajuste manualmente se necessário.</p>', 
+                   unsafe_allow_html=True)
 
     # Calcular preço justo (Graham original)
     preco_justo_graham = None
@@ -206,34 +320,86 @@ def app():
     if dividendos and dividendos > 0:
         preco_barsi = dividendos / 0.06
     
-    # LINHA 03: LPA / VPA / PL / PVPA
+    # ============================================
+    # SEÇÃO 4: INDICADORES DE VALORAÇÃO
+    # ============================================
+    st.markdown('<div class="section-header">🎲 INDICADORES DE VALORAÇÃO</div>', unsafe_allow_html=True)
+    
     col1, col2, col3, col4 = st.columns(4)
     col1.metric('LPA', f"R$ {lpa:.4f}" if lpa else 'N/A')
     col2.metric('VPA', f"R$ {vpa:.4f}" if vpa else 'N/A')
-    col3.metric('P/L', f"{pl:.2f}" if pl else 'N/A')
-    col4.metric('P/VPA', f"{pvpa:.2f}" if pvpa else 'N/A')
+    col3.metric('P/L (Preço/Lucro)', f"{pl:.2f}x" if pl else 'N/A')
+    col4.metric('P/VPA (Preço/Patrimônio)', f"{pvpa:.2f}x" if pvpa else 'N/A')
+
+    # ============================================
+    # SEÇÃO 5: PREÇOS JUSTOS
+    # ============================================
+    st.markdown('<div class="section-header">💎 PREÇOS JUSTOS</div>', unsafe_allow_html=True)
     
-    st.markdown('---')
-    
-    # LINHA 04: PREÇO JUSTO BARSI / PREÇO JUSTO GRAHAM / PREÇO JUSTO BRASIL / PREÇO JUSTO BRASIL COM 20%
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        col1.metric('Preço Justo (Barsi 6%)', f"R$ {preco_barsi:.2f}" if preco_barsi else 'N/A')
+        st.metric('Barsi (6%)', f"R$ {preco_barsi:.2f}" if preco_barsi else 'N/A')
     with col2:
-        col2.metric('Preço Justo (Graham)', f"R$ {preco_justo_graham:.2f}" if preco_justo_graham else 'N/A')
+        st.metric('Graham (USA)', f"R$ {preco_justo_graham:.2f}" if preco_justo_graham else 'N/A')
     with col3:
-        if valor_intrinseco_brasil:
-            col3.metric('Preço Justo (Brasil)', f"R$ {valor_intrinseco_brasil:.2f}")
-        else:
-            col3.metric('Preço Justo (Brasil)', 'N/A')
+        st.metric('Brasil (Puro)', f"R$ {valor_intrinseco_brasil:.2f}" if valor_intrinseco_brasil else 'N/A')
     with col4:
-        if valor_com_margem_brasil:
-            col4.metric('Preço Justo (Brasil - 20%)', f"R$ {valor_com_margem_brasil:.2f}")
-        else:
-            col4.metric('Preço Justo (Brasil - 20%)', 'N/A')
+        st.metric('Brasil (- 20%)', f"R$ {valor_com_margem_brasil:.2f}" if valor_com_margem_brasil else 'N/A')
+
+    # Calcular PEG Ratio
+    peg_ratio = None
+    growth_rate = None
+    if pl is not None and pl > 0:
+        peg_ratio, growth_rate = calcular_peg_ratio(ticker, pl)
     
-    # LINHA 05: UPSIDE PREÇO JUSTO BARSI / UPSIDE PREÇO JUSTO GRAHAM / UPSIDE BRASIL / UPSIDE BRASIL COM 20%
-    # Upside mostra o potencial de alta/baixa: (Preço Justo - Preço Atual) / Preço Justo
+    # ============================================
+    # SEÇÃO 6: ANÁLISE PEG RATIO
+    # ============================================
+    st.markdown('<div class="section-header">📊 ANÁLISE PEG RATIO</div>', unsafe_allow_html=True)
+    
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric('PEG Ratio', f"{peg_ratio:.2f}" if peg_ratio is not None else 'N/A')
+    with col2:
+        st.metric('Crescimento LPA', f"{growth_rate:.1f}%" if growth_rate is not None else 'N/A')
+    
+    # Determinar se está BARATO ou NÃO conforme PEG Ratio
+    avaliacao_peg = None
+    cor_box = None
+    if peg_ratio is not None:
+        if peg_ratio < 0.5:
+            avaliacao_peg = "🟢 MUITO BARATA"
+            cor_box = "success"
+        elif peg_ratio < 1.0:
+            avaliacao_peg = "🟢 BARATA"
+            cor_box = "success"
+        elif peg_ratio < 1.5:
+            avaliacao_peg = "🟡 PREÇO JUSTO"
+            cor_box = "alert"
+        elif peg_ratio < 2.0:
+            avaliacao_peg = "🔴 CARA"
+            cor_box = "danger"
+        else:
+            avaliacao_peg = "🔴 MUITO CARA"
+            cor_box = "danger"
+    
+    with col3:
+        st.metric('Avaliação (PEG)', avaliacao_peg if avaliacao_peg else 'N/A')
+    
+    # Caixa de avaliação colorida
+    if avaliacao_peg:
+        if cor_box == "success":
+            st.markdown(f'<div class="success-box"><strong>✅ Oportunidade de Compra</strong><br>PEG Ratio de {peg_ratio:.2f} indica que a ação está em bom preço considerando seu crescimento.</div>', unsafe_allow_html=True)
+        elif cor_box == "alert":
+            st.markdown(f'<div class="alert-box"><strong>⚠️ Preço Equilibrado</strong><br>PEG Ratio de {peg_ratio:.2f} sugere uma valoração justa. Observe outros indicadores.</div>', unsafe_allow_html=True)
+        else:
+            st.markdown(f'<div class="danger-box"><strong>⛔ Ação Cara</strong><br>PEG Ratio de {peg_ratio:.2f} indica supervalorização. Cuidado ao investir.</div>', unsafe_allow_html=True)
+
+    # ============================================
+    # SEÇÃO 7: POTENCIAL DE UPSIDE
+    # ============================================
+    st.markdown('<div class="section-header">🚀 POTENCIAL DE ALTA (UPSIDE)</div>', unsafe_allow_html=True)
+    
     upside_barsi = None
     upside_graham = None
     upside_brasil = None
@@ -248,46 +414,109 @@ def app():
         upside_brasil_20 = (valor_com_margem_brasil - preco_atual) / valor_com_margem_brasil
     
     col1, col2, col3, col4 = st.columns(4)
+    
+    # Função auxiliar para colorir upside
+    def colorir_upside(value):
+        if value is None:
+            return 'N/A'
+        color = '🟢' if value > 0 else '🔴'
+        return f"{color} {value:.2%}"
+    
     with col1:
-        col1.metric('Upside Barsi 6%', f"{upside_barsi:.2%}" if upside_barsi is not None else 'N/A')
+        st.metric('Upside Barsi 6%', colorir_upside(upside_barsi))
     with col2:
-        col2.metric('Upside Graham', f"{upside_graham:.2%}" if upside_graham is not None else 'N/A')
+        st.metric('Upside Graham', colorir_upside(upside_graham))
     with col3:
-        col3.metric('Upside Brasil (s/ 20%)', f"{upside_brasil:.2%}" if upside_brasil is not None else 'N/A')
+        st.metric('Upside Brasil (Puro)', colorir_upside(upside_brasil))
     with col4:
-        col4.metric('Upside Brasil (c/ 20%)', f"{upside_brasil_20:.2%}" if upside_brasil_20 is not None else 'N/A')
+        # Destaque para o upside mais conservador (Brasil - 20%)
+        if upside_brasil_20 is not None:
+            color = '🟢' if upside_brasil_20 > 0 else '🔴'
+            upside_display = f"{color} {upside_brasil_20:.2%}"
+            st.metric('Upside Brasil (- 20%)', upside_display)
+        else:
+            st.metric('Upside Brasil (- 20%)', 'N/A')
     
-    st.markdown('---')
+    # ============================================
+    # SEÇÃO 8: GRÁFICO DE PREÇO
+    # ============================================
+    st.markdown('<div class="section-header">📈 GRÁFICO HISTÓRICO</div>', unsafe_allow_html=True)
     
-    # Informações adicionais sobre a fórmula de Graham Brasil
-    with st.expander('ℹ️ Explicação da Fórmula de Graham (Adaptação Brasil)'):
-        st.markdown("""
-        **Fórmula adaptada para o Brasil:**
-        
-        Valor Intrínseco = √(10 × VPA × LPA)
-        Preço Sugerido = Valor Intrínseco × 0,80 (margem de segurança 20%)
-        
-        **Rationale da adaptação:**
-        - **Nos EUA (Graham original):** P/L máximo de 15 × P/VP máximo de 1,5 = 22,5
-        - **No Brasil (realidade local):** P/L máximo de 8 × P/VP máximo de 1,25 = 10
-          - P/L de 8: recuperação do capital em até 8 anos
-          - P/VP de 1,25: mais conservador dado juros altos, inflação e risco maior
-        
-        **Margem de Segurança:** 20% de desconto sobre o valor intrínseco
-        - Recomenda-se comprar apenas com essa margem de segurança
-        
-        **Limitações:** Não é recomendado para setores como tecnologia, bancos e seguros
-        """)
-
-    st.markdown('### Gráfico de Preço')
     if not df_close.empty:
         chart_df = pd.DataFrame({'Close': df_close})
         chart_df['SMA20'] = chart_df['Close'].rolling(20).mean()
         chart_df['SMA50'] = chart_df['Close'].rolling(50).mean()
         chart_df['SMA200'] = chart_df['Close'].rolling(200).mean()
-        st.line_chart(chart_df)
+        st.line_chart(chart_df, use_container_width=True)
     else:
-        st.warning('Dados históricos insuficientes para construir o gráfico.')
+        st.warning('⚠️ Dados históricos insuficientes para construir o gráfico.')
+
+    # ============================================
+    # SEÇÃO 9: EXPLICAÇÕES E REFERÊNCIAS
+    # ============================================
+    st.markdown('<div class="section-header">📚 DOCUMENTAÇÃO</div>', unsafe_allow_html=True)
+    
+    with st.expander('ℹ️ Como Usar - Guia Rápido'):
+        st.markdown("""
+        **Passo 1:** Digite o ticker da ação (ex: PETR4.SA)
+        
+        **Passo 2:** Revise os dados de LPA e VPA (se necessário, ajuste manualmente)
+        
+        **Passo 3:** Analise os indicadores:
+        - **Preços Justos:** Compare com o preço atual
+        - **PEG Ratio:** Veja se a ação está barata ou cara
+        - **Upside:** Potencial de ganho até o preço justo
+        
+        **Recomendação:** Compre apenas com margem de segurança (Brasil - 20%)
+        """)
+    
+    with st.expander('🎓 Explicação da Fórmula de Graham (Adaptação Brasil)'):
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("""
+            **Fórmula:**
+            
+            Valor Intrínseco = √(10 × VPA × LPA)
+            
+            Preço com Margem = Valor × 0,80
+            """)
+        with col2:
+            st.markdown("""
+            **Por que adaptado para Brasil?**
+            
+            - **EUA:** P/L máx 15 × P/VP máx 1,5 = 22,5
+            - **Brasil:** P/L máx 8 × P/VP máx 1,25 = 10
+            
+            Mais conservador — juros altos, inflação, risco maior
+            """)
+        
+        st.info("💡 **Margem de Segurança:** 20% de desconto é recomendado antes de comprar")
+
+    with st.expander('📊 Entendendo o PEG Ratio'):
+        st.markdown("""
+        **O que é PEG Ratio?**
+        
+        PEG Ratio = P/L ÷ Taxa de Crescimento Esperado (%)
+        
+        Relaciona preço ao crescimento futuro. Melhor que P/L simples!
+        
+        **Interpretação:**
+        """)
+        
+        df_peg = pd.DataFrame({
+            'PEG Ratio': ['< 0,5', '0,5 - 1,0', '1,0 - 1,5', '1,5 - 2,0', '> 2,0'],
+            'Avaliação': ['🟢 MUITO BARATA', '🟢 BARATA', '🟡 PREÇO JUSTO', '🔴 CARA', '🔴 MUITO CARA'],
+            'Significado': [
+                'Oportunidade excelente',
+                'Bom valor, boa compra',
+                'Preço apropriado',
+                'Um pouco cara',
+                'Muito superavaliada'
+            ]
+        })
+        st.table(df_peg)
+        
+        st.info("💡 **Melhor para:** Empresas em crescimento. Para empresas maduras, use P/L e Dividend Yield")
 
 
 if __name__ == "__main__":
